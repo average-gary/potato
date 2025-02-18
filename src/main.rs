@@ -1,25 +1,43 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use log::{debug, info};
+use tokio;
 
+mod pool_mint;
+mod proxy_wallet;
+mod status;
+mod error;
 #[derive(Parser, Debug)]
-#[clap(author = "Sridhar Ratnakumar", version, about)]
+#[clap(author = "Gary Krause", version, about)]
 /// Application configuration
 struct Args {
     /// whether to be verbose
     #[arg(short = 'v')]
     verbose: bool,
 
-    /// an optional name to greet
-    #[arg()]
-    name: Option<String>,
+    /// What application to spin up
+    #[arg(value_enum)]
+    app: ApplicationToRun
 }
 
-fn main() {
+#[derive(Debug, Clone, ValueEnum)]
+enum ApplicationToRun {
+    ProxyWallet,
+    PoolMint
+}
+
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    pretty_env_logger::init();
     let args = Args::parse();
     if args.verbose {
-        println!("DEBUG {args:?}");
+        debug!("DEBUG {args:?}");
     }
-    println!(
-        "Hello {} (from rust-nix-template)!",
-        args.name.unwrap_or("world".to_string())
-    );
+
+    match args.app {
+        ApplicationToRun::ProxyWallet => proxy_wallet::run().await?,
+        ApplicationToRun::PoolMint => pool_mint::run().await?,
+    }
+
+    Ok(())
 }
