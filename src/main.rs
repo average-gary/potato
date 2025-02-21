@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Using config path: {}", args.config_path);
 
     let cancel_token = CancellationToken::new();
-
+    // TODO: Create a default config for all the roles and have the user provide just one bitcoin address.
     match args.app {
         ApplicationToRun::ProxyWallet => {
             // Load config for ProxyWallet
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
             let settings = config.try_deserialize::<PoolConfiguration>()?;
 
-            pool_mint::run(config, cancel_token.clone()).await?
+            pool_mint::run(settings, cancel_token.clone()).await?
         }
     }
 
