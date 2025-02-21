@@ -14,8 +14,9 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 pub use sv1_api::server_to_client;
+use tokio_util::sync::CancellationToken;
 
-use proxy_config::ProxyConfig;
+use proxy_config::{DownstreamConfig, ProxyConfig, UpstreamConfig, UpstreamDifficultyConfig};
 
 use crate::status::{self, State, Status};
 
@@ -25,23 +26,27 @@ pub mod proxy_config;
 pub mod upstream_sv2;
 pub mod utils;
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-   Ok(()) 
+pub async fn run(settings: ProxyConfig, cancel_token: CancellationToken) -> Result<(), Box<dyn std::error::Error>> {
+    let translator = TranslatorSv2::new(settings, cancel_token);
+    translator.start().await;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
 pub struct TranslatorSv2 {
     config: ProxyConfig,
     reconnect_wait_time: u64,
+    cancel_token: CancellationToken,
 }
 
 impl TranslatorSv2 {
-    pub fn new(config: ProxyConfig) -> Self {
+    pub fn new(config: ProxyConfig, cancel_token: CancellationToken) -> Self {
         let mut rng = rand::thread_rng();
         let wait_time = rng.gen_range(0..=3000);
         Self {
             config,
             reconnect_wait_time: wait_time,
+            cancel_token,
         }
     }
 
@@ -72,66 +77,59 @@ impl TranslatorSv2 {
 
         debug!("Starting up status listener");
         let wait_time = self.reconnect_wait_time;
+        let cancel_token = self.cancel_token.clone();
         // Check all tasks if is_finished() is true, if so exit
         loop {
-            let task_status = tokio::select! {
-                task_status = rx_status.recv().fuse() => task_status,
-                interrupt_signal = tokio::signal::ctrl_c().fuse() => {
-                    match interrupt_signal {
-                        Ok(()) => {
-                            info!("Interrupt received");
-                        },
-                        Err(err) => {
-                            error!("Unable to listen for interrupt signal: {}", err);
-                            // we also shut down in case of error
-                        },
+            tokio::select! {
+                task_status = rx_status.recv().fuse() => {
+                    let task_status: Status = task_status.unwrap();
+                    match task_status.state {
+                        // Should only be sent by the downstream listener
+                        State::DownstreamShutdown(err) => {
+                            error!("SHUTDOWN from: {}", err);
+                            break;
+                        }
+                        State::BridgeShutdown(err) => {
+                            error!("SHUTDOWN from: {}", err);
+                            break;
+                        }
+                        State::UpstreamShutdown(err) => {
+                            error!("SHUTDOWN from: {}", err);
+                            break;
+                        }
+                        State::UpstreamTryReconnect(err) => {
+                            error!("Trying to reconnect the Upstream because of: {}", err);
+
+                            // wait a random amount of time between 0 and 3000ms
+                            // if all the downstreams try to reconnect at the same time, the upstream may
+                            // fail
+                            tokio::time::sleep(std::time::Duration::from_millis(wait_time)).await;
+
+                            // kill al the tasks
+                            let task_collector_aborting = task_collector_.clone();
+                            kill_tasks(task_collector_aborting.clone());
+
+                            warn!("Trying reconnecting to upstream");
+                            self.internal_start(
+                                tx_sv1_notify.clone(),
+                                target.clone(),
+                                tx_status.clone(),
+                                task_collector_.clone(),
+                            )
+                            .await;
+                        }
+                        State::Healthy(msg) => {
+                            info!("HEALTHY message: {}", msg);
+                        }
+                        // Because we merged two codebases, we need to handle
+                        // all possible states here. The remaining states are not expected.
+                        _ => panic!("This should not happen"),
                     }
+                },
+                _ = cancel_token.cancelled() => {
+                    info!("Cancellation token triggered, shutting down...");
                     break;
                 }
-            };
-            let task_status: Status = task_status.unwrap();
-
-            match task_status.state {
-                // Should only be sent by the downstream listener
-                State::DownstreamShutdown(err) => {
-                    error!("SHUTDOWN from: {}", err);
-                    break;
-                }
-                State::BridgeShutdown(err) => {
-                    error!("SHUTDOWN from: {}", err);
-                    break;
-                }
-                State::UpstreamShutdown(err) => {
-                    error!("SHUTDOWN from: {}", err);
-                    break;
-                }
-                State::UpstreamTryReconnect(err) => {
-                    error!("Trying to reconnect the Upstream because of: {}", err);
-
-                    // wait a random amount of time between 0 and 3000ms
-                    // if all the downstreams try to reconnect at the same time, the upstream may
-                    // fail
-                    tokio::time::sleep(std::time::Duration::from_millis(wait_time)).await;
-
-                    // kill al the tasks
-                    let task_collector_aborting = task_collector_.clone();
-                    kill_tasks(task_collector_aborting.clone());
-
-                    warn!("Trying reconnecting to upstream");
-                    self.internal_start(
-                        tx_sv1_notify.clone(),
-                        target.clone(),
-                        tx_status.clone(),
-                        task_collector_.clone(),
-                    )
-                    .await;
-                }
-                State::Healthy(msg) => {
-                    info!("HEALTHY message: {}", msg);
-                }
-                // Because we merged two codebases, we need to handle
-                // all possible states here. The remaining states are not expected.
-                _ => panic!("This should not happen"),
             }
         }
     }
