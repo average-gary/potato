@@ -4,26 +4,34 @@ pub mod template_receiver;
 use core::panic;
 
 use async_channel::{bounded, unbounded};
+use tokio_util::sync::CancellationToken;
 
 use crate::{error::PoolError, status};
-use mining_pool::{get_coinbase_output, Configuration, Pool};
+use mining_pool::{get_coinbase_output, Pool, PoolConfiguration};
 use template_receiver::TemplateRx;
 use tracing::{error, info, warn};
 
-use tokio::select;
-
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    Ok(()) 
- }
+pub async fn run(
+    config: PoolConfiguration,
+    cancel_token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = PoolSv2::new(config, cancel_token);
+    pool.start().await;
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 pub struct PoolSv2 {
-    config: Configuration,
+    config: PoolConfiguration,
+    cancel_token: CancellationToken,
 }
 
 impl PoolSv2 {
-    pub fn new(config: Configuration) -> PoolSv2 {
-        PoolSv2 { config }
+    pub fn new(config: PoolConfiguration, cancel_token: CancellationToken) -> PoolSv2 {
+        PoolSv2 {
+            config,
+            cancel_token,
+        }
     }
 
     pub async fn start(&self) -> Result<(), PoolError> {
@@ -59,51 +67,44 @@ impl PoolSv2 {
         // Start the error handling loop
         // See `./status.rs` and `utils/error_handling` for information on how this operates
         loop {
-            let task_status = select! {
-                task_status = status_rx.recv() => task_status,
-                interrupt_signal = tokio::signal::ctrl_c() => {
-                    match interrupt_signal {
-                        Ok(()) => {
-                            info!("Interrupt received");
-                        },
-                        Err(err) => {
-                            error!("Unable to listen for interrupt signal: {}", err);
-                            // we also shut down in case of error
-                        },
-                    }
-                    break Ok(());
-                }
-            };
-            let task_status: status::Status = task_status.unwrap();
+            tokio::select! {
+                task_status = status_rx.recv() => {
+                    let task_status: status::Status = task_status.unwrap();
 
-            match task_status.state {
-                // Should only be sent by the downstream listener
-                status::State::DownstreamShutdown(err) => {
-                    error!(
-                        "SHUTDOWN from Downstream: {}\nTry to restart the downstream listener",
-                        err
-                    );
-                    break Ok(());
-                }
-                status::State::TemplateProviderShutdown(err) => {
-                    error!("SHUTDOWN from Upstream: {}\nTry to reconnecting or connecting to a new upstream", err);
-                    break Ok(());
-                }
-                status::State::Healthy(msg) => {
-                    info!("HEALTHY message: {}", msg);
-                }
-                status::State::DownstreamInstanceDropped(downstream_id) => {
-                    warn!("Dropping downstream instance {} from pool", downstream_id);
-                    if pool
-                        .safe_lock(|p| p.remove_downstream(downstream_id))
-                        .is_err()
-                    {
-                        break Ok(());
+                    match task_status.state {
+                        // Should only be sent by the downstream listener
+                        status::State::DownstreamShutdown(err) => {
+                            error!(
+                                "SHUTDOWN from Downstream: {}\nTry to restart the downstream listener",
+                                err
+                            );
+                            break Ok(());
+                        }
+                        status::State::TemplateProviderShutdown(err) => {
+                            error!("SHUTDOWN from Upstream: {}\nTry to reconnecting or connecting to a new upstream", err);
+                            break Ok(());
+                        }
+                        status::State::Healthy(msg) => {
+                            info!("HEALTHY message: {}", msg);
+                        }
+                        status::State::DownstreamInstanceDropped(downstream_id) => {
+                            warn!("Dropping downstream instance {} from pool", downstream_id);
+                            if pool
+                                .safe_lock(|p| p.remove_downstream(downstream_id))
+                                .is_err()
+                            {
+                                break Ok(());
+                            }
+                        }
+                        // Because we merged two codebases, we need to handle
+                        // all possible states here. The remaining states are not expected.
+                        _ => panic!("This should not happen"),
                     }
+                },
+                _ = self.cancel_token.cancelled() => {
+                    info!("Cancellation token triggered, shutting down...");
+                    break Ok(());
                 }
-                // Because we merged two codebases, we need to handle
-                // all possible states here. The remaining states are not expected.
-                _ => panic!("This should not happen"),
             }
         }
     }

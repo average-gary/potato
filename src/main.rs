@@ -1,6 +1,7 @@
 use clap::{Parser, ValueEnum};
 use ext_config::{Config, File, FileFormat};
 use log::{debug, info, error};
+use pool_mint::mining_pool::PoolConfiguration;
 use proxy_wallet::proxy_config::ProxyConfig;
 use tokio;
 use tokio_util::sync::CancellationToken;
@@ -59,8 +60,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         ApplicationToRun::PoolMint => {
             // Load config for PoolMint
+            let config = Config::builder()
+                .add_source(File::new(&args.config_path, FileFormat::Toml))
+                .build()?;
+            let settings = config.try_deserialize::<PoolConfiguration>()?;
 
-            // pool_mint::run(config).await?
+            pool_mint::run(config, cancel_token.clone()).await?
         }
     }
 

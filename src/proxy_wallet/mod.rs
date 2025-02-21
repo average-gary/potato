@@ -8,13 +8,13 @@ use std::{
     sync::Arc,
 };
 
+pub use sv1_api::server_to_client;
 use tokio::{
     sync::broadcast,
     task::{self, AbortHandle},
 };
-use tracing::{debug, error, info, warn};
-pub use sv1_api::server_to_client;
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
 use proxy_config::{DownstreamConfig, ProxyConfig, UpstreamConfig, UpstreamDifficultyConfig};
 
@@ -26,7 +26,10 @@ pub mod proxy_config;
 pub mod upstream_sv2;
 pub mod utils;
 
-pub async fn run(settings: ProxyConfig, cancel_token: CancellationToken) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    settings: ProxyConfig,
+    cancel_token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error>> {
     let translator = TranslatorSv2::new(settings, cancel_token);
     translator.start().await;
     Ok(())

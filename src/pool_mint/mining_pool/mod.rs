@@ -42,7 +42,7 @@ pub type Message = PoolMessages<'static>;
 pub type StdFrame = StandardSv2Frame<Message>;
 pub type EitherFrame = StandardEitherFrame<Message>;
 
-pub fn get_coinbase_output(config: &Configuration) -> Result<Vec<TxOut>, Error> {
+pub fn get_coinbase_output(config: &PoolConfiguration) -> Result<Vec<TxOut>, Error> {
     let mut result = Vec::new();
     for coinbase_output_pool in &config.coinbase_outputs {
         let coinbase_output: CoinbaseOutput_ = coinbase_output_pool.try_into()?;
@@ -90,7 +90,7 @@ impl TryFrom<&CoinbaseOutput> for CoinbaseOutput_ {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct Configuration {
+pub struct PoolConfiguration {
     pub listen_address: String,
     pub tp_address: String,
     pub tp_authority_public_key: Option<Secp256k1PublicKey>,
@@ -147,7 +147,7 @@ impl ConnectionConfig {
     }
 }
 
-impl Configuration {
+impl PoolConfiguration {
     pub fn new(
         pool_connection: ConnectionConfig,
         template_provider: TemplateProviderConfig,
@@ -384,7 +384,7 @@ impl Pool {
     #[cfg(feature = "test_only_allow_unencrypted")]
     async fn accept_incoming_plain_connection(
         self_: Arc<Mutex<Pool>>,
-        config: Configuration,
+        config: PoolConfiguration,
     ) -> PoolResult<()> {
         let listener = TcpListener::bind(&config.test_only_listen_address_plain)
             .await
@@ -412,7 +412,7 @@ impl Pool {
 
     async fn accept_incoming_connection(
         self_: Arc<Mutex<Pool>>,
-        config: Configuration,
+        config: PoolConfiguration,
     ) -> PoolResult<()> {
         let status_tx = self_.safe_lock(|s| s.status_tx.clone())?;
         let listener = TcpListener::bind(&config.listen_address).await?;
@@ -588,7 +588,7 @@ impl Pool {
     }
 
     pub fn start(
-        config: Configuration,
+        config: PoolConfiguration,
         new_template_rx: Receiver<NewTemplate<'static>>,
         new_prev_hash_rx: Receiver<SetNewPrevHash<'static>>,
         solution_sender: Sender<SubmitSolution<'static>>,
@@ -737,7 +737,7 @@ mod test {
     use std::convert::TryInto;
     use tracing::error;
 
-    use super::Configuration;
+    use super::PoolConfiguration;
 
     // this test is used to verify the `coinbase_tx_prefix` and `coinbase_tx_suffix` values tested
     // against in message generator
@@ -747,11 +747,11 @@ mod test {
         let config_path = "./config-examples/pool-config-local-tp-example.toml";
 
         // Load config
-        let config: Configuration = match Config::builder()
+        let config: PoolConfiguration = match Config::builder()
             .add_source(File::new(&config_path, FileFormat::Toml))
             .build()
         {
-            Ok(settings) => match settings.try_deserialize::<Configuration>() {
+            Ok(settings) => match settings.try_deserialize::<PoolConfiguration>() {
                 Ok(c) => c,
                 Err(e) => {
                     error!("Failed to deserialize config: {}", e);
