@@ -2,6 +2,7 @@ use log::{debug, info, error};
 use tokio;
 use tokio_util::sync::CancellationToken;
 use clap::Parser;
+use std::env;
 
 mod pool_mint;
 mod proxy_wallet;
@@ -14,11 +15,17 @@ use pool_mint::mining_pool::CoinbaseOutput;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    pretty_env_logger::init();
     let mut args = Args::parse();
+    
+    // Set the log level based on the verbose flag
     if args.verbose {
-        debug!("DEBUG {args:?}");
+        env::set_var("RUST_LOG", "debug");
+    } else {
+        env::set_var("RUST_LOG", "info");
     }
+    pretty_env_logger::init();
+    
+    debug!("DEBUG {args:?}");
 
     let cancel_token = CancellationToken::new();
     let cancel_token_proxy = cancel_token.clone();
