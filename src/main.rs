@@ -82,6 +82,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         debug!("DEBUG {args:?}");
     }
 
+    let cancel_token = CancellationToken::new();
+    let cancel_token_proxy = cancel_token.clone();
+    let cancel_token_pool = cancel_token.clone();
+
+    // Load configs for both services first
+    let proxy_config = Config::builder()
+        .add_source(File::new(&args.proxy_config_path, FileFormat::Toml))
+        .build()?;
+    let proxy_settings = proxy_config.try_deserialize::<ProxyConfig>()?;
+    info!("ProxyWallet Config: {:?}", &proxy_settings);
+
+    let pool_config = Config::builder()
+        .add_source(File::new(&args.pool_mint_config_path, FileFormat::Toml))
+        .build()?;
+    let mut pool_settings: PoolConfiguration = pool_config.try_deserialize::<PoolConfiguration>()?;
+    info!("PoolMint Config: {:?}", &pool_settings);
+
     // Validate or prompt for coinbase output
     let coinbase_output = if let Some(ref output) = args.coinbase_output {
         match validate_xpub(output) {
@@ -106,30 +123,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         prompt_for_coinbase_output()?
     };
-    args.coinbase_output = Some(coinbase_output);
+    args.coinbase_output = Some(coinbase_output.clone());
 
-    let coinbase_output = args.coinbase_output.as_ref().unwrap();
     info!("Using coinbase output address: {}", coinbase_output);
     info!("Using derivation path: {}", args.derivation_path);
     info!("Using proxy config path: {}", args.proxy_config_path);
     info!("Using pool mint config path: {}", args.pool_mint_config_path);
 
-    let cancel_token = CancellationToken::new();
-    let cancel_token_proxy = cancel_token.clone();
-    let cancel_token_pool = cancel_token.clone();
-
-    // Load configs for both services
-    let proxy_config = Config::builder()
-        .add_source(File::new(&args.proxy_config_path, FileFormat::Toml))
-        .build()?;
-    let proxy_settings = proxy_config.try_deserialize::<ProxyConfig>()?;
-    info!("ProxyWallet Config: {:?}", &proxy_settings);
-
-    let pool_config = Config::builder()
-        .add_source(File::new(&args.pool_mint_config_path, FileFormat::Toml))
-        .build()?;
-    let pool_settings = pool_config.try_deserialize::<PoolConfiguration>()?;
-    info!("PoolMint Config: {:?}", &pool_settings);
+    // Update pool settings with the validated coinbase output
+    let coinbase_output = pool_mint::mining_pool::CoinbaseOutput::new(
+        "P2WPKH".to_string(),  // Using P2WPKH for SLIP-132 xpub
+        coinbase_output.to_string(),
+    );
+    pool_settings.coinbase_outputs = vec![coinbase_output];
 
     // Run both services concurrently and handle Ctrl+C
     tokio::select! {
