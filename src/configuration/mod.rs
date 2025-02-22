@@ -80,7 +80,7 @@ pub fn create_default_pool_config() -> PoolConfiguration {
             "P2WPKH".to_string(),
             "036adc3bdf21e6f9a0f0fb0066bf517e5b7909ed1563d6958a10993849a7554075".to_string(),
         )],
-        pool_signature: "Stratum v2 SRI Pool".to_string(),
+        pool_signature: "potato".to_string(),
         #[cfg(feature = "test_only_allow_unencrypted")]
         test_only_listen_address_plain: "0.0.0.0:34250".to_string(),
     }
@@ -89,7 +89,7 @@ pub fn create_default_pool_config() -> PoolConfiguration {
 pub fn create_default_proxy_config() -> ProxyConfig {
     ProxyConfig {
         upstream_address: "127.0.0.1".to_string(),
-        upstream_port: 34265,
+        upstream_port: 34254,
         upstream_authority_pubkey: Secp256k1PublicKey::from_str("9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72").unwrap(),
         downstream_address: "0.0.0.0".to_string(), 
         downstream_port: 34255,

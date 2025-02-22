@@ -44,7 +44,9 @@ impl TemplateRx {
         expected_tp_authority_public_key: Option<Secp256k1PublicKey>,
     ) -> PoolResult<()> {
         let stream = TcpStream::connect(address).await?;
-        info!("Connected to template distribution server at {}", address);
+        info!("Template provider connection:");
+        info!("  - Connected to server at: {}", address);
+        info!("  - Authority public key: {}", expected_tp_authority_public_key.map_or("None".to_string(), |k| k.to_string()));
 
         let initiator = match expected_tp_authority_public_key {
             Some(expected_tp_authority_public_key) => {

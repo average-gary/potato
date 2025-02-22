@@ -416,10 +416,10 @@ impl Pool {
     ) -> PoolResult<()> {
         let status_tx = self_.safe_lock(|s| s.status_tx.clone())?;
         let listener = TcpListener::bind(&config.listen_address).await?;
-        info!(
-            "Listening for encrypted connection on: {}",
-            config.listen_address
-        );
+        info!("Starting mining pool server:");
+        info!("  - Listening for connections on: {}", config.listen_address);
+        info!("  - Template provider address: {}", config.tp_address);
+
         while let Ok((stream, _)) = listener.accept().await {
             let address = stream.peer_addr().unwrap();
             debug!(
