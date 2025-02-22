@@ -1,6 +1,6 @@
 use clap::Parser;
 use ext_config::{Config, File, FileFormat};
-use log::{debug, info, error};
+use log::{debug, info, error, warn};
 use pool_mint::mining_pool::PoolConfiguration;
 use proxy_wallet::proxy_config::ProxyConfig;
 use tokio;
@@ -10,6 +10,7 @@ use bitcoin::util::bip32::{ExtendedPubKey, DerivationPath};
 use bitcoin::secp256k1::Secp256k1;
 use std::str::FromStr;
 use slip132::FromSlip132;
+use key_utils::Secp256k1PublicKey;
 
 mod pool_mint;
 mod proxy_wallet;
@@ -74,6 +75,51 @@ fn prompt_for_coinbase_output() -> io::Result<String> {
     }
 }
 
+fn create_default_pool_config() -> PoolConfiguration {
+    PoolConfiguration {
+        listen_address: "0.0.0.0:34254".to_string(),
+        tp_address: "127.0.0.1:8442".to_string(),
+        tp_authority_public_key: Some("9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72".to_string()),
+        authority_public_key: "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72".parse().unwrap(),
+        authority_secret_key: "mkDLTBBRxdBv998612qipDYoTK3YUrqLe8uWw7gu3iXbSrn2n".parse().unwrap(),
+        cert_validity_sec: 3600,
+        coinbase_outputs: vec![CoinbaseOutput {
+            output_script_type: "P2WPKH".to_string(),
+            output_script_value: "036adc3bdf21e6f9a0f0fb0066bf517e5b7909ed1563d6958a10993849a7554075".to_string(),
+        }],
+        pool_signature: "Stratum v2 SRI Pool".to_string(),
+        #[cfg(feature = "test_only_allow_unencrypted")]
+        test_only_listen_address_plain: "0.0.0.0:34250".to_string(),
+    }
+}
+
+fn create_default_proxy_config() -> ProxyConfig {
+    use proxy_wallet::proxy_config::{DownstreamDifficultyConfig, UpstreamDifficultyConfig};
+    
+    ProxyConfig {
+        upstream_address: "127.0.0.1".to_string(),
+        upstream_port: 34265,
+        upstream_authority_pubkey: Secp256k1PublicKey::from_str("9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72").unwrap(),
+        downstream_address: "0.0.0.0".to_string(), 
+        downstream_port: 34255,
+        max_supported_version: 2,
+        min_supported_version: 2,
+        min_extranonce2_size: 8,
+        downstream_difficulty_config: DownstreamDifficultyConfig {
+            min_individual_miner_hashrate: 10_000_000_000_000.0,
+            shares_per_minute: 6.0,
+            submits_since_last_update: 0,
+            timestamp_of_last_update: 0,
+        },
+        upstream_difficulty_config: UpstreamDifficultyConfig {
+            channel_diff_update_interval: 60,
+            channel_nominal_hashrate: 10_000_000_000_000.0,
+            timestamp_of_last_update: 0,
+            should_aggregate: false,
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
@@ -86,17 +132,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cancel_token_proxy = cancel_token.clone();
     let cancel_token_pool = cancel_token.clone();
 
-    // Load configs for both services first
-    let proxy_config = Config::builder()
+    // Load or create default proxy config
+    let proxy_settings = match Config::builder()
         .add_source(File::new(&args.proxy_config_path, FileFormat::Toml))
-        .build()?;
-    let proxy_settings = proxy_config.try_deserialize::<ProxyConfig>()?;
+        .build()
+    {
+        Ok(config) => config.try_deserialize::<ProxyConfig>()?,
+        Err(e) => {
+            warn!("Failed to load proxy config ({}), using defaults", e);
+            create_default_proxy_config()
+        }
+    };
     info!("ProxyWallet Config: {:?}", &proxy_settings);
 
-    let pool_config = Config::builder()
+    // Load or create default pool config
+    let mut pool_settings = match Config::builder()
         .add_source(File::new(&args.pool_mint_config_path, FileFormat::Toml))
-        .build()?;
-    let mut pool_settings: PoolConfiguration = pool_config.try_deserialize::<PoolConfiguration>()?;
+        .build()
+    {
+        Ok(config) => config.try_deserialize::<PoolConfiguration>()?,
+        Err(e) => {
+            warn!("Failed to load pool config ({}), using defaults", e);
+            create_default_pool_config()
+        }
+    };
     info!("PoolMint Config: {:?}", &pool_settings);
 
     // Validate or prompt for coinbase output
