@@ -51,6 +51,7 @@ network_helpers_sv2 = { version = "^2.0.0", features = ["async_std", "tokio"] }
 noise_sv2 = "1.2.1"
 roles_logic_sv2 = "^1.0.0"
 sv1_api = "^1.0.0"
+slip132 = "0.10"
 
 
 [dev-dependencies]
