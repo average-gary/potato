@@ -2,3 +2,4 @@
 /result
 /result-lib
 /.pre-commit-config.yaml
+.vscode/settings.json

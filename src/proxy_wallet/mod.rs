@@ -267,6 +267,10 @@ impl TranslatorSv2 {
                 proxy_config.downstream_port,
             );
 
+            info!("Starting proxy server:");
+            info!("  - Downstream (miners) listening on: {}", downstream_addr);
+            info!("  - Upstream (pool) connecting to: {}:{}", proxy_config.upstream_address, proxy_config.upstream_port);
+
             let task_collector_downstream = task_collector_init_task.clone();
             // Accept connections from one or more SV1 Downstream roles (SV1 Mining Devices)
             downstream_sv1::Downstream::accept_connections(
