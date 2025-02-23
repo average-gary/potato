@@ -17,6 +17,12 @@ use pool_mint::mining_pool::CoinbaseOutput;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = Args::parse();
     
+    // Ensure mainnet is not allowed
+    if args.network == bitcoin::Network::Bitcoin {
+        error!("Mainnet is not supported");
+        return Err("Mainnet is not supported".into());
+    }
+    
     // Set the log level based on the verbose flag
     if args.verbose {
         env::set_var("RUST_LOG", "debug");

@@ -3,6 +3,7 @@ use ext_config::{Config, File, FileFormat};
 use log::{debug, info, error, warn};
 use bitcoin::util::bip32::{ExtendedPubKey, DerivationPath};
 use bitcoin::secp256k1::Secp256k1;
+use bitcoin::Network;
 use std::str::FromStr;
 use slip132::FromSlip132;
 use std::io::{self, Write};
@@ -33,6 +34,10 @@ pub struct Args {
     /// The derivation path for the coinbase output (e.g. m/0/0)
     #[arg(short = 'd', long = "derivation-path", default_value = "m/0/0")]
     pub derivation_path: String,
+
+    /// The Bitcoin network to use (mainnet not allowed)
+    #[arg(short = 'n', long = "network", default_value = "testnet4")]
+    pub network: Network,
 }
 
 fn derive_child_public_key(xpub: &ExtendedPubKey, path: &str) -> Result<ExtendedPubKey, String> {
